@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadConfig, patchConfig, ensureDir, DATA_DIR } from './settings.mjs';
-import { recommendedContext } from './runtime.mjs';
+import { recommendedContext, selectedContext } from './runtime.mjs';
 
 export const PROVIDER_ID = 'local-llm';
 export const CREDENTIAL_REF = 'LOCAL_LLM_API_KEY';
@@ -413,9 +413,11 @@ async function syncProviderInner(cfg, models, opts = {}) {
   // 每个模型按本机显存计算“真正能全量进 GPU 的最大上下文”，
   // 不能把 2B 的 256K 声明值直接写给 Harness：2B 的 256K KV 放不进 2GB。
   const modelsWithCtx = await Promise.all(models.map(async (m) => {
-    let contextWindow = 0;
-    try { contextWindow = await recommendedContext(cfg, m); } catch { /* fallback below */ }
-    if (!contextWindow) contextWindow = Math.min(Number(m.contextLength) || Number(cfg.runtime.ctx) || 4096, Number(cfg.runtime.ctx) || 262144);
+    let contextWindow = selectedContext(cfg, m);
+    if (!contextWindow) {
+      try { contextWindow = await recommendedContext(cfg, m); } catch { /* fallback below */ }
+    }
+    if (!contextWindow) contextWindow = Math.min(Number(m.contextLength) || Number(cfg.runtime.ctx) || 4096, Number(cfg.runtime.ctx) || 1048576);
     return { ...m, contextWindow };
   }));
   const fingerprint = JSON.stringify({

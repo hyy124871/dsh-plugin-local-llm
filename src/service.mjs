@@ -12,7 +12,7 @@ import {
 import { allFamilies, evaluate, describe, findFamily } from './catalog.mjs';
 import { detect, diskFree } from './hardware.mjs';
 import { scanModels, startDownload, cancelDownload, removeModel, listJobs, SOURCES, freeGB, formatBytes } from './download.mjs';
-import { detectRuntime, runtimeJobInfo, downloadRuntime, startServer, stopServer, restartServer, serverStatus, chat, adoptServer, recommendedContext, healthCheck } from './runtime.mjs';
+import { detectRuntime, runtimeJobInfo, downloadRuntime, startServer, stopServer, restartServer, serverStatus, chat, adoptServer, recommendedContext, healthCheck, modelContextLength } from './runtime.mjs';
 import { startGateway, stopGateway, restartGateway, gatewayStatus, gatewayBaseURL, setSwitchHandler, beginGatewayMaintenance, endGatewayMaintenance, waitForGatewayIdle, gatewayActiveRequests, gatewayOldestRequestMs } from './gateway.mjs';
 import { setHost as setHarnessHost, syncProvider, setDefaultModel, restoreDefaultModel, harnessStatus, resetDefaultIfMissing, currentDefaultModel, compactionDebug } from './harness.mjs';
 import { importPath, scanImported, removeImported } from './importer.mjs';
@@ -720,6 +720,42 @@ export async function action(body = {}) {
       }
       setTimeout(() => { bgSync().catch(() => {}); }, 500);
       return { ok, server, harness: harnessStatus() };
+    }
+
+    case 'setContext': {
+      const rec = findRecord(cfg, body);
+      if (!rec) throw new Error('找不到要设置上下文的模型');
+      let ctx = Math.floor(Number(body.ctx) || 0);
+      if (!(ctx > 0)) throw new Error('上下文长度无效');
+      const native = Number(rec.contextLength) || modelContextLength(rec.firstGguf || rec.path || '') || 0;
+      if (native > 0) ctx = Math.min(ctx, native);
+      ctx = Math.max(512, Math.min(1048576, ctx));
+      const current = loadConfig();
+      patchConfig({ runtime: { modelContexts: { ...(current.runtime.modelContexts || {}), [rec.modelId]: ctx } } });
+      const fresh = loadConfig();
+      const st = serverStatus();
+      const samePath = st.modelPath && rec.firstGguf && path.resolve(st.modelPath) === path.resolve(rec.firstGguf);
+      let server = st;
+      if (st.status === 'running' && samePath) {
+        if (!(await waitForGatewayIdle(15000))) throw new Error('当前仍在生成，等本次回答结束后再切换上下文');
+        beginGatewayMaintenance();
+        switchBusy = true;
+        watchGeneration += 1;
+        try {
+          server = await restartServer(fresh, {
+            path: rec.firstGguf || rec.path,
+            name: `${rec.familyName || '本地'} ${rec.label || ''}`.trim(),
+            modelId: rec.modelId,
+            familyId: rec.familyId,
+            quantId: rec.quantId,
+          }, { ctx, alias: rec.modelId });
+        } finally {
+          switchBusy = false;
+          endGatewayMaintenance();
+        }
+      }
+      await syncProvider(fresh, currentModels(fresh), { baseURL: gatewayBaseURL(), force: true });
+      return { ok: true, ctx, modelId: rec.modelId, restarted: server.status === 'running' && samePath, server: serverStatus(), harness: harnessStatus() };
     }
 
     case 'stop': {

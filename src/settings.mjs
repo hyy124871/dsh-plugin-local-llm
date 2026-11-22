@@ -59,6 +59,7 @@ export function defaults() {
       version: '',
       port: 18080,
       ctx: 1048576,
+      modelContexts: {},
       threads: 0,
       threadsBatch: 0,
       ngl: -1,
@@ -188,6 +189,7 @@ export function patchConfig(patch) {
     next.runtime.timeoutSec = clampInt(next.runtime.timeoutSec, 30, 1800, 600);
     if (!['auto', 'on', 'off'].includes(next.runtime.flashAttn)) next.runtime.flashAttn = 'auto';
     if (!['auto', 'f16', 'q8_0', 'q4_0'].includes(next.runtime.kvCache)) next.runtime.kvCache = 'auto';
+    if (!isObject(next.runtime.modelContexts)) next.runtime.modelContexts = {};
     if (!['default', 'off', 'low', 'medium', 'high'].includes(next.runtime.reasoningEffort)) next.runtime.reasoningEffort = 'default';
   }
   if (next.gateway) {

@@ -699,6 +699,15 @@ function resolveDraftModel(cfg, model) {
   return '';
 }
 
+/** 用户在模型菜单里为某个本地模型选定的上下文；未选过返回 0（走自动）。 */
+export function selectedContext(cfg, model) {
+  const id = String(model?.modelId || '');
+  const raw = id ? Number((cfg.runtime?.modelContexts || {})[id]) : 0;
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  const native = Number(model?.contextLength) || modelContextLength(model?.firstGguf || model?.path || '');
+  return native > 0 ? Math.min(raw, native) : raw;
+}
+
 function resolveKvCache(cfg, modelPath, ctx) {
   const raw = String(cfg.runtime.kvCache || 'auto').toLowerCase();
   if (raw !== 'auto') return raw;
@@ -801,8 +810,9 @@ async function startServerInner(cfg, model, opts = {}) {
   const threads = Number(cfg.runtime.threads) || physicalThreads();
   const autoCtx = await recommendedContext(cfg, model);
   const requestedCtx = Number(opts.ctx);
-  // 页面/API 传的 ctx 只能作为上限，不能超过本机显存放得下的值。
-  const ctx = requestedCtx > 0 ? Math.min(requestedCtx, autoCtx) : autoCtx;
+  const chosenCtx = selectedContext(cfg, model) || (requestedCtx > 0 ? requestedCtx : 0);
+  // 用户按模型选定的上下文优先；API 传值只在没有用户选择时兜底。两者都只是上限，仍不能超过本机内存能承受的自动值。
+  const ctx = chosenCtx > 0 ? Math.min(chosenCtx, autoCtx) : autoCtx;
   const plan = await computeTierPlan({ ...cfg, runtime: { ...cfg.runtime, build: rt.build } }, model, ctx);
   let ngl = Number(opts.ngl ?? cfg.runtime.ngl);
   if ((!Number.isFinite(ngl) || ngl < 0) && cfg.runtime.tiered !== false) ngl = plan.ngl;
