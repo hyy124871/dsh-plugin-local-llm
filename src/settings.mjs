@@ -58,7 +58,7 @@ export function defaults() {
       backend: 'auto',
       version: '',
       port: 18080,
-      ctx: 65536,
+      ctx: 1048576,
       threads: 0,
       threadsBatch: 0,
       ngl: -1,
@@ -153,9 +153,9 @@ export function loadConfig() {
     if (!Array.isArray(merged.extraModelDirs)) merged.extraModelDirs = [];
     if (!isObject(merged.placements)) merged.placements = {};
     // 旧默认 4096/8192 会把 Spark 等模型卡在 8K，工具定义一进来就没输出空间。
-    // 新语义：ctx 是“上限”，默认 65536；需要更长上下文可手动调高，代价是更慢。
-    if (merged.runtime && [4096, 8192].includes(Number(merged.runtime.ctx))) {
-      merged.runtime.ctx = 65536;
+    // 新语义：ctx 是“上限”，默认 1M；滑动窗口模型按真实 KV 估算后再决定是否下调。
+    if (merged.runtime && [4096, 8192, 65536].includes(Number(merged.runtime.ctx))) {
+      merged.runtime.ctx = 1048576;
       writeConfig(merged);
     }
     return merged;
@@ -179,7 +179,7 @@ export function patchConfig(patch) {
   // 基础卫生：端口/上下文落在合理区间，路径必须是绝对路径（允许 ~ 展开）。
   if (next.runtime) {
     next.runtime.port = clampInt(next.runtime.port, 1024, 65535, 18080);
-    next.runtime.ctx = clampInt(next.runtime.ctx, 512, 262144, 65536);
+    next.runtime.ctx = clampInt(next.runtime.ctx, 512, 1048576, 1048576);
     next.runtime.threads = clampInt(next.runtime.threads, 0, 128, 0);
     next.runtime.ngl = clampInt(next.runtime.ngl, -1, 999, -1);
     next.runtime.batch = clampInt(next.runtime.batch, 32, 4096, 512);

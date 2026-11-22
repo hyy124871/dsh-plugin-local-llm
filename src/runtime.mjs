@@ -86,7 +86,7 @@ function readGgufMetaUncached(file) {
   const out = {
     ok: false, arch: '', blockCount: 0, headCount: 0, headCountKv: 0,
     embeddingLength: 0, contextLength: 0, keyLength: 0, valueLength: 0,
-    fullAttentionInterval: 0,
+    fullAttentionInterval: 0, slidingWindow: 0, slidingWindowPattern: null,
   };
   let fd = null;
   try {
@@ -140,7 +140,16 @@ function readGgufMetaUncached(file) {
         const value = readStr();
         if (key === 'general.architecture') out.arch = value;
       } else if (type === 9) {
-        skip(9);
+        const et = u32();
+        const n = u64();
+        if (n > 4096) throw new Error('gguf array too large');
+        if (/\.attention\.sliding_window_pattern$/.test(key) && [4, 5, 7].includes(et)) {
+          const arr = [];
+          for (let j = 0; j < n; j += 1) arr.push(Boolean(readNum(et)));
+          out.slidingWindowPattern = arr;
+        } else {
+          for (let j = 0; j < n; j += 1) skip(et);
+        }
       } else {
         const value = readNum(type);
         if (/\.block_count$/.test(key)) out.blockCount = Number(value) || 0;
@@ -150,6 +159,7 @@ function readGgufMetaUncached(file) {
         else if (/\.context_length$/.test(key)) out.contextLength = Number(value) || 0;
         else if (/\.attention\.key_length$/.test(key)) out.keyLength = Number(value) || 0;
         else if (/\.attention\.value_length$/.test(key)) out.valueLength = Number(value) || 0;
+        else if (/\.attention\.sliding_window$/.test(key)) out.slidingWindow = Number(value) || 0;
         else if (/\.full_attention_interval$/.test(key)) out.fullAttentionInterval = Number(value) || 0;
       }
     }
@@ -235,11 +245,27 @@ function estimateKvBytes(meta, ctx, kvType) {
   const kvHeads = meta.headCountKv || heads;
   const embed = meta.embeddingLength || 2048;
   const headDim = meta.keyLength || Math.max(32, Math.round(embed / Math.max(1, heads)));
+  const bytes = kvBytesPer(kvType);
+  // Spark-X2.6 是滑动窗口混合注意力：7 层全注意力 + 21 层 512 窗口。
+  // 1M 上下文的 KV 只有约 4.2GB（q4_0），不是按 28 层全注意力算出的 17GB。
+  const pattern = meta.slidingWindowPattern;
+  const win = Number(meta.slidingWindow) || 0;
+  if (Array.isArray(pattern) && pattern.length && win > 0) {
+    let full = 0;
+    let sliding = 0;
+    for (let i = 0; i < blocks; i += 1) {
+      if (pattern[i % pattern.length]) sliding += 1;
+      else full += 1;
+    }
+    const fullCtx = Math.max(512, ctx);
+    const slidingCtx = Math.min(fullCtx, win);
+    return 2 * kvHeads * headDim * (full * fullCtx + sliding * slidingCtx) * bytes;
+  }
   // Qwen3.5 是混合架构：只有每隔 full_attention_interval 层才有完整的 KV，
   // 其余层是 SSM 状态；按全部 block 算会把 256K 的 KV 高估 4 倍。
   const interval = Number(meta.fullAttentionInterval) || 1;
   const attentionBlocks = interval > 1 ? Math.ceil(blocks / interval) : blocks;
-  return 2 * attentionBlocks * kvHeads * headDim * Math.max(512, ctx) * kvBytesPer(kvType);
+  return 2 * attentionBlocks * kvHeads * headDim * Math.max(512, ctx) * bytes;
 }
 
 function gbOf(bytes) {
@@ -318,7 +344,7 @@ export async function recommendedContext(cfg, model) {
   const limitGB = weakGpu ? ramGB : gpuBackend ? vramGB : ramGB;
   if (!limitGB) return Math.min(declared, cap);
   const reserveGB = weakGpu ? 2.0 : gpuBackend ? 0.1 : 2.0;
-  const steps = [262144, 131072, 65536, 32768, 16384, 8192]
+  const steps = [1048576, 524288, 262144, 131072, 65536, 32768, 16384, 8192]
     .filter((n) => n <= declared && n <= cap);
   if (!steps.length) steps.push(Math.min(declared, cap));
   let chosen = steps[steps.length - 1];
