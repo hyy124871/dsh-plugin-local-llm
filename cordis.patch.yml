@@ -1,0 +1,4 @@
+# 只追加自己这一行，不替换任何官方 dsh 组件。
+- insert:
+    - id: local-llm
+      name: dsh-plugin-local-llm

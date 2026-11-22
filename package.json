@@ -1,0 +1,72 @@
+{
+  "name": "dsh-plugin-local-llm",
+  "version": "1.0.0-preview",
+  "description": "DeepSeek Harness 本地模型插件：GGUF 下载与启停，OpenAI 兼容接入，零配置。",
+  "icon": "./assets/icon.svg",
+  "displayName": "本地模型",
+  "type": "module",
+  "main": "src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./client": "./lib/client.js",
+    "./catalog": "./src/catalog.mjs",
+    "./hardware": "./src/hardware.mjs",
+    "./download": "./src/download.mjs",
+    "./runtime": "./src/runtime.mjs",
+    "./settings": "./src/settings.mjs",
+    "./importer": "./src/importer.mjs",
+    "./gateway": "./src/gateway.mjs",
+    "./harness": "./src/harness.mjs",
+    "./catalog-update": "./src/catalog-update.mjs",
+    "./self-update": "./src/self-update.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/**",
+    "lib/**",
+    "assets/**",
+    "cordis.patch.yml",
+    "README.md",
+    "INSTALL.md"
+  ],
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "llama.cpp",
+    "local-llm",
+    "gguf",
+    "quantization",
+    "settings"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "selftest": "node scripts/test-host.mjs",
+    "probe": "node scripts/probe-snapshot.mjs",
+    "probe:resolve": "node scripts/probe-resolve.mjs",
+    "probe:runtime": "node scripts/probe-runtime.mjs"
+  },
+  "license": "MIT",
+  "author": "hyy124871",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hyy124871/dsh-plugin-local-llm.git"
+  },
+  "homepage": "https://github.com/hyy124871/dsh-plugin-local-llm#readme",
+  "bugs": {
+    "url": "https://github.com/hyy124871/dsh-plugin-local-llm/issues"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  }
+}
